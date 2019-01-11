@@ -1,5 +1,0 @@
-(** @canonical Tp7.Tp7 *)
-module Tp7 = Tp7
-
-(** @canonical Tp7.Tp7_etu *)
-module Tp7_etu = Tp7__Tp7_etu

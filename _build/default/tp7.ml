@@ -1,3 +1,4 @@
+open Graphics
 
 module type SimpleIter =
 sig
@@ -153,13 +154,21 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
     let box = (boxx, boxy);;
 
 
+    let rec rectxy1 (rx,ry,exist,_) =  ((rx-.rB,rx+.largR+.rB),(ry-.rB,ry+.longR+.rB));;
+                          
     
-    
-    let rec rectxy lRect = 
-      match lRect with 
-      | [] -> [];
-      | (rx,ry,exist)::q -> if exist then ((rx-.rB,rx+.largR+.rB),(ry-.rB,ry+.longR+.rB),(rx,ry))::(rectxy q)
-                            else rectxy q;;
+    let rec rectxy flRect = 
+      match Flux.uncons flRect with 
+      | None -> []
+      | Some(lRect,_) -> let rec aux lRect = 
+                            match lRect with 
+                            | [] -> [];
+                            | (rx,ry,exist,_)::q -> if exist then ((rx-.rB,rx+.largR+.rB),(ry-.rB,ry+.longR+.rB))::(aux q)
+                                                  else aux q
+                          in aux lRect;;
+      
+    let raquette = open_graph " 400x300"; let (x,y) = mouse_pos () in 
+                   ((float_of_int x  -. rB ,float_of_int x+.80.+. rB ),(float_of_int y-. rB ,float_of_int y +. 20.+. rB ));;  
 
     (*let rec findAndSet listrect paire*)
       
@@ -170,14 +179,17 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
        ddr = 0, -g
      *)
     let contact (infx, supx) x dx = (x < infx && dx < 0.) || (x > supx && dx > 0.);;
-    let contact_rect_h ((infx,supx),(infy,supy),(rx,ry)) (x,y) (dx,dy) m eps = 
+    let contact_rect_h ((infx,supx),(infy,supy)) (x,y) (dx,dy) m eps = 
         (dx > 0. && y<supy && y>infy && x+.m > infx && x+.m < supx  && x+.m -. infx <= eps)
         || (dx < 0. && y<supy && y>infy && x-.m > infx && x-.m < supx && supx-.x+.m <= eps);;
     
-    let contact_rect_v ((infx,supx),(infy,supy),(rx,ry)) (x,y) (dx,dy) m eps = 
+    let contact_rect_v ((infx,supx),(infy,supy)) (x,y) (dx,dy) m eps = 
       (dy > 0. && x<supx && x>infx && y+.m > infy && y+.m < supy && y+.m -.infy <= eps)
       || (dy < 0. && x<supx && x>infx && y-.m > infy && y-.m < supy && supy-.y+.m <= eps);;
-  
+    
+    let contact_raquette ((infx,supx),(infy,supy)) (x,y) (dx,dy) m eps = 
+      (dy < 0. && x<supx && x>infx && y-.m > infy && y-.m < supy && supy-.y+.m <= eps);;
+    
     
     let rebond  (boxx, boxy) rect (x, y) (dx, dy) =
       
@@ -189,16 +201,19 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
        (if (contact boxy y dy) then -.dy 
           else 
             if List.fold_right (fun pair res -> res || (contact_rect_v pair (x,y) (dx,dy) 1. 2.)) rect false then-.dy 
+            else if contact_raquette raquette (x,y) (dx,dy) 1. 2. then -.dy
             else dy)
         ;;
 
-    let rec position lRect =
+    
+   
+    let rec position flRect =
       Tick (lazy (Flux.uncons (
-      integre dt2 (Init.x0, Init.y0) id (vitesse lRect)         
+      integre dt2 (Init.x0, Init.y0) id (vitesse flRect)         
         )))
-    and vitesse lRect =
+    and vitesse flRect =
       Tick (lazy (Flux.uncons (
-      integre dt2 (Init.dx0, Init.dy0) (Flux.map (rebond box (rectxy lRect)) (position lRect) ) acceleration
+      integre dt2 (Init.dx0, Init.dy0) (Flux.map (rebond box (rectxy flRect)) (position flRect) ) acceleration
         )))
     and acceleration =
       Tick (lazy (Flux.uncons (
@@ -206,18 +221,57 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
         )))
     ;;
 
-    let balle lRect = Flux.map2 (fun position vitesse -> (position, vitesse)) (position lRect) (vitesse lRect);;
+    let detecterCollision lRect (x,y) (dx,dy) = 
+        match lRect with 
+        | [] -> lRect
+        | l::q ->  let rec aux l acc = 
+                      match l with 
+                      | [] -> acc 
+                      | t::q -> if (contact_rect_h (rectxy1 t) (x,y) (dx,dy) 1. 2.) 
+                                || (contact_rect_v (rectxy1 t) (x,y) (dx,dy) 1. 2.) then 
+                                aux q acc 
+                                else aux q (t::acc)
+                    in aux lRect [];;
+
+    let id2 = Flux.constant (fun x -> x);;
+    let majBlocks flRect (x,y) (dx,dy) =
+         
+          match Flux.uncons flRect with 
+          | None -> Flux.vide
+          | Some(lRect,_) ->  let rec aux  = 
+                              let flux = Flux.constant (detecterCollision lRect (x,y) (dx,dy)) in 
+                                Tick (lazy (Some 
+                                (
+                                  lRect, Flux.apply id2 (Flux.map2 (fun a f -> f) aux flux
+                                ))))
+                              in aux;;
+
+
+    let blocks flRect = 
+        Format.printf "#blocks";
+        match Flux.uncons (position flRect), Flux.uncons (vitesse flRect) with 
+        | None , _ 
+        | _ , None -> Flux.vide
+        | Some((x,y),_), Some((dx,dy),_) -> Tick (lazy (Flux.uncons ( majBlocks flRect (x,y) (dx,dy) )))
+
+    ;;
+
+    let balle flRect = 
+                       Flux.map2 (fun position (vitesse,blocks)-> (position, vitesse, blocks)) (position flRect) 
+                                 (Flux.map2 (fun vitesse blocks -> (vitesse, blocks)) (vitesse flRect) (blocks flRect));;
     
 
 
     let rec drawRects lRect =
       match lRect with 
-      | [] -> true
-      | (rx,ry,exist)::q -> if exist then Graphics.draw_rect (int_of_float rx) (int_of_float ry) 50 20; 
+      | [] -> ()
+      | (rx,ry,exist,color)::q -> if exist then draw_rect (int_of_float rx) (int_of_float ry) 50 20; set_color color; fill_rect (int_of_float rx) (int_of_float ry) 50 20;
                             drawRects q;;
 
+    
+    
 
-    let draw r lRect=
+    let draw r =
       let ref_r = ref r in
       let ref_handler_alrm = ref Sys.(Signal_handle (fun _ -> ())) in
       let ref_handler_int  = ref Sys.(Signal_handle (fun _ -> ())) in
@@ -229,14 +283,37 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
                Sys.(set_signal sigalrm !ref_handler_alrm);
                Sys.(set_signal sigint  !ref_handler_int)
              end
-          | Some (((x, y), (dx, dy)), r') ->
+          | Some (((x, y), (dx, dy) , lRect), r') ->
              begin
+
+              
+
                (*Format.printf "r=(%f, %f); dr = (%f, %f)@." x y dx dy;*)
-               Graphics.clear_graph ();
-               Graphics.draw_circle (int_of_float x) (int_of_float y) 5;
+               clear_graph (); 
+               set_color black;
+               draw_circle (int_of_float x) (int_of_float y) 5;
+               fill_circle (int_of_float x) (int_of_float y) 5;
                drawRects lRect;
+              
                
-               Graphics.synchronize ();
+            
+               set_color blue;
+              let x = fst((mouse_pos ())) in 
+                  if x + 80 > 400 then 
+                    let x = (400-80) in 
+                    draw_rect x 10 80 20;
+                    fill_rect x 10 80 20;
+                  else if x < 0 then 
+                    let x = 0 in 
+                    draw_rect x 10 80 20;
+                    fill_rect x 10 80 20;
+                  else 
+                    draw_rect x 10 80 20;
+                    fill_rect x 10 80 20;
+                    
+                      
+
+               synchronize ();
                (*ignore (read_line ());*)
                ref_r := r'
              end
@@ -246,8 +323,8 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
           ref_r := Flux.vide
         end in
       begin
-        Graphics.open_graph " 400x300";
-        Graphics.auto_synchronize false;
+        
+        auto_synchronize false;
         Sys.(ref_handler_alrm := signal sigalrm (Signal_handle handler_alrm));
         Sys.(ref_handler_int  := signal sigint  (Signal_handle handler_int));
         Unix.(setitimer ITIMER_REAL { it_interval = Init.dt; it_value = Init.dt });
@@ -256,8 +333,11 @@ module BouncingBall (Init : sig val dt : float val m0 : float val x0 : float val
 
 
 
-module BB = BouncingBall (struct let dt = 0.01 let m0 = 10. let x0 = 100. let y0 = 20. let dx0 = 300. let dy0 = 400. end);;
-let lRect = [(200.,150.,true);(260.,150.,true);(100.,150.,false)] in BB.(draw (balle lRect) lRect);;
+module BB = BouncingBall (struct let dt = 0.01 let m0 = 10. let x0 = 10. let y0 = 50. let dx0 = 250. let dy0 = 150. end);;
+let flRect = Tick (lazy (Flux.uncons (
+                            Flux.constant [(200.,210.,true,yellow);(260.,210.,true,yellow);(200.,150.,true,yellow);(260.,150.,true,green);(100.,150.,true,red)]
+              ))) in BB.(draw (balle flRect));;
+
 
 
 

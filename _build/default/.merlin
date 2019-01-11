@@ -3,4 +3,4 @@ B _build/default/.tp7.objs
 S /usr/lib/ocaml
 S .
 FLG -ppx ''\''/home/freenemya/Desktop/ocaml proect/_build/default/.ppx/jbuild/ppx_inline_test/ppx.exe'\'' --as-ppx --cookie '\''library-name="tp7"'\'''
-FLG -open Tp7__ -w -40
+FLG -w -40
