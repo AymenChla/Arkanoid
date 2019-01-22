@@ -1,3 +1,4 @@
+exception End
 open Graphics
 
 module type SimpleIter =
@@ -71,7 +72,7 @@ module type Step =
   
 module Configuration = 
 struct
-  let largFenetre = 400
+  let largFenetre = 600
   let longFenetre = 300
   let raquetteY = 10
   let largRaquette = 80
@@ -83,11 +84,11 @@ struct
   let largRaquette = 80
   let longRaquette = 20
   let g = 9.81
-  let boxx = (5., 395.)
-  let boxy = (5., 295.)
+  let boxx = (rB, float_of_int largFenetre-.rB)
+  let boxy = (rB, float_of_int longFenetre-.rB)
   let box = (boxx, boxy)
 
-  let augm = 30.
+  let augm = 10.
 end
 
 module Drawing (S : Step) =
@@ -114,8 +115,77 @@ module Drawing (S : Step) =
     let rec drawBriques lRect =
       match lRect with 
       | [] -> ()
-      | (rx,ry,exist,color)::q -> if exist then draw_rect (int_of_float rx) (int_of_float ry) largBrique longBrique; set_color color; fill_rect (int_of_float rx) (int_of_float ry) largBrique longBrique;
+      | (rx,ry,count,_,score)::q -> if count > 0 then 
+                  let color = 
+                  (match count with 
+                  | 1 -> yellow
+                  | 2 -> green
+                  | 3 -> red
+                  | _ -> raise End)
+                  in
+                  draw_rect (int_of_float rx) (int_of_float ry) largBrique longBrique; set_color color; fill_rect (int_of_float rx) (int_of_float ry) largBrique longBrique;
         drawBriques q;;
+    
+    let drawScore score = 
+      moveto 10 10;
+      set_color black;
+      set_font "-*-fixed-medium-r-semicondensed--20-*-*-*-*-*-iso8859-1";
+      draw_string ("score: "  ^string_of_int score)
+      ;;
+    
+    let drawTentatives tentatives =
+      moveto (largFenetre-50) (longFenetre-50);
+      
+      set_color red;
+      draw_circle (largFenetre-49) (longFenetre-45) 10;
+      fill_circle (largFenetre-49) (longFenetre-45) 10;
+
+      set_color white;
+      set_font "-*-fixed-medium-r-semicondensed--13-*-*-*-*-*-iso8859-1";
+      draw_string  (string_of_int tentatives);
+      ;;
+      
+      module Initialisation =
+  struct
+    let dt = 0.01
+    let masse0 = 10.
+    let position0 = (10., 40.)
+    let vitesse0 = (70., 70.)
+    let briques0 = [(200.,210.,true,yellow,10);(260.,210.,true,yellow,10);(200.,150.,true,yellow,10);(260.,150.,true,green,20);(100.,150.,true,red,50)]
+    let score = 0
+    let tentatives = 3
+  end;;
+
+      let handle_char c = match (Char.code c) with 
+      | 27  ->  exit 0
+      | _  -> clear_graph ()
+      ;;
+
+      let drawGameOver  size   =
+
+          moveto (largFenetre/2-100) (longFenetre/2);
+          set_color black;
+          set_font "-*-fixed-medium-r-semicondensed--50-*-*-*-*-*-iso8859-1";
+          draw_string  "Game Over";
+          moveto (largFenetre/2-75) (longFenetre/2-50);
+          set_font "-*-fixed-medium-r-semicondensed--20-*-*-*-*-*-iso8859-1";
+          draw_string  "Press ESC to Exit";
+
+          synchronize ();
+          let s = Graphics.wait_next_event [Graphics.Key_pressed] 
+          in if s.Graphics.keypressed then handle_char s.Graphics.key;
+  
+        ;;
+
+      
+      let drawWin size =
+        moveto (largFenetre/2-50) (longFenetre/2);
+        set_color black;
+        set_font "-*-fixed-medium-r-semicondensed--50-*-*-*-*-*-iso8859-1";
+        draw_string  "Win";
+      ;;
+   
+      
 
     let run r =
       let ref_r = ref r in
@@ -129,7 +199,7 @@ module Drawing (S : Step) =
                Sys.(set_signal sigalrm !ref_handler_alrm);
                Sys.(set_signal sigint  !ref_handler_int)
              end
-          | Some (((x, y), (dx, dy),briques, raquette), r') ->
+          | Some (((x, y), (dx, dy),briques, (score,tentatives)), r') ->
              begin
                (*Format.printf "r=(%f, %f); dr = (%f, %f)@." x y dx dy;*)
                Graphics.clear_graph ();
@@ -141,9 +211,18 @@ module Drawing (S : Step) =
 
                drawBriques briques;
 
-               drawRaquette raquette;
-                  
+               let (rx,_) = mouse_pos () in 
+               drawRaquette (rx,raquetteY);
+              
+               drawScore score;
+              
+               drawTentatives tentatives;
+              
+               if tentatives = 0 then
+                 drawGameOver 0;
+                    
 
+               if List.length briques = 0 then drawWin 0;
 
                Graphics.synchronize ();
                (*ignore (read_line ());*)
@@ -163,7 +242,7 @@ module Drawing (S : Step) =
       end    
 
       let positionRaquette = 
-        Graphics.open_graph " 400x300";
+        Graphics.open_graph ((" "  ^ string_of_int largFenetre) ^ "x"  ^ (string_of_int longFenetre));
         let (x,_)  = mouse_pos () in
         Tick (lazy (Flux.uncons (
             Flux.constant (float_of_int x, float_of_int raquetteY)
@@ -177,7 +256,9 @@ module type Params =
     val masse0 : float
     val position0 : float * float
     val vitesse0  : float * float
-    val briques0 : (float*float*bool*Graphics.color) list
+    val briques0 : (float*float*int*Graphics.color*int) list
+    val score : int
+    val tentatives : int
   end
 
 module BallWithGravity (Init : Params) =
@@ -218,10 +299,15 @@ module BallWithGravity (Init : Params) =
       Flux.constant Init.briques0
         )))
     ;;
-
+    
+    let score = 
+      Tick (lazy (Flux.uncons (
+      Flux.constant (Init.score,Init.tentatives)
+        )))
+    ;;
    
     module Draw = Drawing (Init);;
-    let etat = Flux.map2 (fun raquette (position,vitesse,briques) -> (position,vitesse,briques,raquette)) (Draw.positionRaquette)
+    let etat =  Flux.map2 (fun  score (position,vitesse,blocks)-> (position, vitesse, blocks,score)) (score)
                     (Flux.map2 (fun position (vitesse,blocks)-> (position, vitesse, blocks)) (position) 
                           (Flux.map2 (fun vitesse blocks -> (vitesse, blocks)) (vitesse) (briques)));;
 
@@ -234,32 +320,21 @@ module BouncingBall =
 
     let bornesRaquette (rx,ry) =   ((rx  -. rB ,rx+. float_of_int largRaquette +. rB ),(ry -. rB ,ry +. float_of_int longRaquette +. rB ));;  
 
-    let rec bornesBrique (rx,ry,exist,_) =  ((rx-.rB,rx+. float_of_int largBrique+.rB),(ry-.rB,ry+. float_of_int longBrique+.rB));; 
+    let rec bornesBrique (rx,ry,exist,_,_) =  ((rx-.rB,rx+. float_of_int largBrique+.rB),(ry-.rB,ry+. float_of_int longBrique+.rB));; 
 
     let rec bornesBriques briques = 
       let rec aux briques = 
         match briques with 
         | [] -> [];
-        | (rx,ry,exist,_)::q -> if exist then ((rx-.rB,rx+.float_of_int largBrique+.rB),(ry-.rB,ry+.float_of_int longBrique+.rB))::(aux q)
+        | (rx,ry,exist,_,points)::q -> if exist > 0 then ((rx-.rB,rx+.float_of_int largBrique+.rB),(ry-.rB,ry+.float_of_int longBrique+.rB))::(aux q)
                               else aux q
       in aux briques;;
 
-    let until flux p pb pr f1 f2 f3 =
-      Flux.unfold (fun (init, f) ->
-          match Flux.uncons f with
-               | None  -> None
-               | Some (v, f') -> Some (v, 
-                        match v with 
-                        | ((x,y),(dx,dy),briques, raquette)->
-                            if init && p ((x,y),(dx,dy)) then (false,f1 v)
-                            else if init &&  pb ((x,y),(dx,dy),briques) then (false,f2 v)
-                            else if init && pr ((x,y),(dx,dy),raquette) then (false,f3 v)
-                            else (init,f'))
-                          
-      ) (true, flux);;
 
-    let contact_1d (infx, supx) x dx = (x < infx && dx < 0.) || (x > supx && dx > 0.);;
-    
+    let contact_box_h (infx, supx) x dx = (x < infx && dx < 0.) || (x > supx && dx > 0.);;
+    let contact_box_v (infy, supy) y dy = (y > supy && dy > 0.);;
+    let contact_echec (infy, supy) y dy = (y < infy && dy < 0.);;
+
     let contact_rect_h ((infx,supx),(infy,supy)) (x,y) (dx,dy) m eps = 
       (dx > 0. && y<supy && y>infy && x+.m > infx && x+.m < supx  && x+.m -. infx <= eps)
       || (dx < 0. && y<supy && y>infy && x-.m > infx && x-.m < supx && supx-.x+.m <= eps);;
@@ -273,8 +348,8 @@ module BouncingBall =
     
     
     let rebondBox (boxx, boxy) ((x, y), (dx, dy)) =
-        ((if contact_1d boxx x dx then -. dx else dx),
-         (if contact_1d boxy y dy then -. dy else dy));;
+        ((if contact_box_h boxx x dx then -. dx else dx),
+         (if contact_box_v boxy y dy then -. dy else dy));;
   
     let rebondBrique (boxx, boxy) ((x,y),(dx,dy),briques) =
       let bornes = bornesBriques briques in
@@ -288,21 +363,39 @@ module BouncingBall =
         ;;
 
 
-    let rebondRaquette  (boxx, boxy) ((x,y),(dx,dy),(rx,ry)) =      
+    let rebondRaquette  (boxx, boxy) ((x,y),(dx,dy)) = 
+        let (rx,_)  = mouse_pos () in 
         (dx),
-          (if contact_raquette (bornesRaquette (rx,ry)) (x,y) (dx,dy) 1. 2. then -.dy
+          (if contact_raquette (bornesRaquette (float_of_int rx,float_of_int raquetteY)) (x,y) (dx,dy) 1. 2. then -.dy
             else dy)
           ;;
 
-    let contact ((x, y),(dx, dy)) = contact_1d boxx x dx || contact_1d boxy y dy;;
-    
+    let contact ((x, y),(dx, dy)) = contact_box_h boxx x dx || contact_box_v boxy y dy;;
+
+    let contactEchec ((x,y), (dx,dy)) =  contact_echec boxx y dy;;
+
     let contactBriques ((x,y),(dx,dy),briques) = 
       let bornes = bornesBriques briques in 
       List.fold_right (fun pair res -> res || (contact_rect_h pair (x,y) (dx,dy) 1. 2.)) bornes false
       || List.fold_right (fun pair res -> res || (contact_rect_v pair (x,y) (dx,dy) 1. 2.)) bornes false;;
 
-    let contactRaquette ((x,y),(dx,dy),(rx,ry)) = 
-      contact_raquette (bornesRaquette (rx,ry)) (x,y) (dx,dy) 1. 2.;;
+    let contactRaquette ((x,y),(dx,dy)) = 
+      let (rx,_) = mouse_pos () in 
+      contact_raquette (bornesRaquette (float_of_int rx,float_of_int raquetteY)) (x,y) (dx,dy) 1. 2.;;
+    
+    let updateScore ((x,y),(dx,dy),briques) score =
+      match briques with 
+      | [] -> score
+      | l::q ->  let rec aux l score = 
+                    match l with 
+                    | [] -> score 
+                    | t::q -> if (contact_rect_h (bornesBrique t) (x,y) (dx,dy) 1. 2.) 
+                              || (contact_rect_v (bornesBrique t) (x,y) (dx,dy) 1. 2.) then 
+                                match t with 
+                                | (x,y,existe,coleur,s) -> aux q (score+s)
+                              else aux q score
+                  in aux briques score;;
+    ;;
 
     let updateBriques ((x,y),(dx,dy),briques) =
         match briques with 
@@ -312,15 +405,36 @@ module BouncingBall =
                       | [] -> acc 
                       | t::q -> if (contact_rect_h (bornesBrique t) (x,y) (dx,dy) 1. 2.) 
                                 || (contact_rect_v (bornesBrique t) (x,y) (dx,dy) 1. 2.) then 
-                                aux q acc 
+                                    match t with 
+                                    | (x,y,1,couleur,points) -> aux q acc
+                                    | (x,y,count,couleur,points) -> aux q ((x,y,(count-1),couleur,points)::acc)
                                 else aux q (t::acc)
                     in aux briques [];;
       ;;
+    
+
+  let until flux contactBox contactBriques contactRaquette contactEchec f1 f2 f3 f4 f5 f6=
+    Flux.unfold (fun (init, f) ->
+        match Flux.uncons f with
+              | None  -> None
+              | Some (v, f') -> Some (v, 
+                      match v with 
+                      | ((x,y),(dx,dy),briques,(score,tentatives))->
+                          if init && contactBox ((x,y),(dx,dy)) then (false,f1 v)
+                          else if init &&  contactBriques ((x,y),(dx,dy),briques) then (false,f2 v)
+                          else if init && contactRaquette ((x,y),(dx,dy)) then (false,f3 v)
+                          else if init && contactEchec ((x,y),(dx,dy)) then
+                                if tentatives > 1 then (false,f4 v)
+                                else (false,f5 v)
+                          else if init && List.length briques = 0 then (false,f6 v)
+                          else (init,f'))    
+    ) (true, flux);;
+
 
     let rec etat (module Init : Params) =
       let module BwG = BallWithGravity (Init) in
       Tick (lazy (Flux.uncons (
-      until BwG.etat contact contactBriques contactRaquette (fun ((x,y),(dx,dy),briques,raquette) -> let module Restart =
+      until BwG.etat contact contactBriques contactRaquette contactEchec (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
                                               struct
                                                 include Init
                                                 let position0 = (x,y)
@@ -328,20 +442,48 @@ module BouncingBall =
                                               end in
                                             etat (module Restart))
 
-                                            (fun ((x,y),(dx,dy),briques,raquette) -> let module Restart =
+                                            (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
                                               struct
                                                 include Init
                                                 let position0 = (x,y)
                                                 let vitesse0 = let (dx,dy) = rebondBrique box ((x,y),(dx,dy),briques) in ( (if dx > 0. then dx+.augm else dx-.augm) , (if dy > 0. then dy+.augm else dy-.augm))
                                                 let briques0 = updateBriques ((x,y),(dx,dy),briques)
+                                                let score = updateScore ((x,y),(dx,dy),briques) score
                                               end in
                                             etat (module Restart))
 
-                                            (fun ((x,y),(dx,dy),briques,raquette) -> let module Restart =
+                                            (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
                                               struct
                                                 include Init
                                                 let position0 = (x,y)
-                                                let vitesse0 = rebondRaquette box ((x,y),(dx,dy),raquette)
+                                                let score = updateScore ((x,y),(dx,dy),briques) score
+                                                let vitesse0 = rebondRaquette box ((x,y),(dx,dy))
+                                              end in
+                                            etat (module Restart))
+
+                                            (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
+                                              struct
+                                                include Init
+                                                let position0 = (10., 40.)
+                                                let vitesse0 = (150., 200.)
+                                                let tentatives = tentatives - 1
+                                              end in
+                                            etat (module Restart))
+
+                                            (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
+                                              struct
+                                                include Init
+                                                let position0 = (x,y)
+                                                let vitesse0 = (0.,0.)
+                                                let tentatives = 0
+                                              end in
+                                            etat (module Restart))
+
+                                            (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
+                                              struct
+                                                include Init
+                                                let position0 = (x,y)
+                                                let vitesse0 = (0.,0.)
                                               end in
                                             etat (module Restart))
               )))
@@ -352,8 +494,10 @@ module Initialisation =
     let dt = 0.01
     let masse0 = 10.
     let position0 = (10., 40.)
-    let vitesse0 = (70., 50.)
-    let briques0 = [(200.,210.,true,yellow);(260.,210.,true,yellow);(200.,150.,true,yellow);(260.,150.,true,green);(100.,150.,true,red)];
+    let vitesse0 = (70., 70.)
+    let briques0 = [(200.,210.,1,yellow,10);(260.,210.,1,yellow,10);(200.,150.,1,yellow,10);(260.,150.,2,green,20);(100.,150.,3,red,50)]
+    let score = 0
+    let tentatives = 1
   end
 
 
