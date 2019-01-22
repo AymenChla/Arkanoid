@@ -79,14 +79,15 @@ struct
   let largBrique = 50
   let longBrique = 20
 
-  let rB = 5.;;
-  let largRaquette = 80;;
-  let longRaquette = 20;;
-  let g = 9.81;;
-  let boxx = (5., 395.);;
-  let boxy = (5., 295.);;
-  let box = (boxx, boxy);;
+  let rB = 5.
+  let largRaquette = 80
+  let longRaquette = 20
+  let g = 9.81
+  let boxx = (5., 395.)
+  let boxy = (5., 295.)
+  let box = (boxx, boxy)
 
+  let augm = 30.
 end
 
 module Drawing (S : Step) =
@@ -331,7 +332,7 @@ module BouncingBall =
                                               struct
                                                 include Init
                                                 let position0 = (x,y)
-                                                let vitesse0 = rebondBrique box ((x,y),(dx,dy),briques)
+                                                let vitesse0 = let (dx,dy) = rebondBrique box ((x,y),(dx,dy),briques) in ( (if dx > 0. then dx+.augm else dx-.augm) , (if dy > 0. then dy+.augm else dy-.augm))
                                                 let briques0 = updateBriques ((x,y),(dx,dy),briques)
                                               end in
                                             etat (module Restart))
@@ -351,7 +352,7 @@ module Initialisation =
     let dt = 0.01
     let masse0 = 10.
     let position0 = (10., 40.)
-    let vitesse0 = (250., 150.)
+    let vitesse0 = (70., 50.)
     let briques0 = [(200.,210.,true,yellow);(260.,210.,true,yellow);(200.,150.,true,yellow);(260.,150.,true,green);(100.,150.,true,red)];
   end
 
