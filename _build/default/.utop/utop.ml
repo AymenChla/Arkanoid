@@ -1,5 +1,6 @@
 Clflags.include_dirs :=
   [ "/home/freenemya/.opam/system/lib/bytes"
+  ; "/home/freenemya/.opam/system/lib/camlimages"
   ; "/home/freenemya/.opam/system/lib/camomile"
   ; "/home/freenemya/.opam/system/lib/camomile/default_config"
   ; "/home/freenemya/.opam/system/lib/camomile/dyn"

@@ -1,6 +1,8 @@
 exception End
 open Graphics
 
+
+
 module type SimpleIter =
 sig
   type 'a t
@@ -91,7 +93,9 @@ struct
   let augm = 10.
 end
 
-module Drawing (S : Step) =
+let _ = Graphics.open_graph ((" "  ^ string_of_int Configuration.largFenetre) ^ "x"  ^ (string_of_int Configuration.longFenetre));;
+
+module Drawing (S : Step)  =
   struct
     
     include Configuration
@@ -145,20 +149,9 @@ module Drawing (S : Step) =
       draw_string  (string_of_int tentatives);
       ;;
       
-      module Initialisation =
-  struct
-    let dt = 0.01
-    let masse0 = 10.
-    let position0 = (10., 40.)
-    let vitesse0 = (70., 70.)
-    let briques0 = [(200.,210.,true,yellow,10);(260.,210.,true,yellow,10);(200.,150.,true,yellow,10);(260.,150.,true,green,20);(100.,150.,true,red,50)]
-    let score = 0
-    let tentatives = 3
-  end;;
-
       let handle_char c = match (Char.code c) with 
       | 27  ->  exit 0
-      | _  -> clear_graph ()
+      | _  -> raise End
       ;;
 
       let drawGameOver  size   =
@@ -242,7 +235,7 @@ module Drawing (S : Step) =
       end    
 
       let positionRaquette = 
-        Graphics.open_graph ((" "  ^ string_of_int largFenetre) ^ "x"  ^ (string_of_int longFenetre));
+        
         let (x,_)  = mouse_pos () in
         Tick (lazy (Flux.uncons (
             Flux.constant (float_of_int x, float_of_int raquetteY)
@@ -259,6 +252,7 @@ module type Params =
     val briques0 : (float*float*int*Graphics.color*int) list
     val score : int
     val tentatives : int
+    val getStartingPosition : unit -> (float * float)
   end
 
 module BallWithGravity (Init : Params) =
@@ -464,9 +458,10 @@ module BouncingBall =
                                             (fun ((x,y),(dx,dy),briques,(score,tentatives)) -> let module Restart =
                                               struct
                                                 include Init
-                                                let position0 = (10., 40.)
-                                                let vitesse0 = (150., 200.)
+                                                let position0 = getStartingPosition ()
+                                                let vitesse0 = (40., 40.)
                                                 let tentatives = tentatives - 1
+                                              
                                               end in
                                             etat (module Restart))
 
@@ -489,21 +484,39 @@ module BouncingBall =
               )))
   end
 
+
 module Initialisation =
   struct
+    include Configuration
+    
+    let getStartingPosition () = 
+        let x = fst((mouse_pos ())) and y = (raquetteY+longRaquette+ int_of_float rB) in 
+        if x + largRaquette > largFenetre then 
+          (float_of_int ((largFenetre-largRaquette)+(largRaquette/2)),float_of_int y)
+        else if x < 0 then 
+          (float_of_int (largRaquette/2),float_of_int y)
+        else 
+          (float_of_int (x+(largRaquette/2)),float_of_int y)
+    ;;
+
     let dt = 0.01
     let masse0 = 10.
-    let position0 = (10., 40.)
-    let vitesse0 = (70., 70.)
-    let briques0 = [(200.,210.,1,yellow,10);(260.,210.,1,yellow,10);(200.,150.,1,yellow,10);(260.,150.,2,green,20);(100.,150.,3,red,50)]
+    let position0 = getStartingPosition ()
+
+    
+    let vitesse0 = (40., 40.)
+    let briques0 = [(20.,150.,1,yellow,10);(80.,150.,1,yellow,10);(140.,150.,1,yellow,10);(200.,150.,1,yellow,10);(260.,150.,1,yellow,10);(320.,150.,1,yellow,10);(380.,150.,1,yellow,10);(440.,150.,1,yellow,10);(500.,150.,1,yellow,10);
+                    (20.,200.,2,green,10);(80.,200.,2,green,10);(140.,200.,2,green,10);(200.,200.,2,green,20);(260.,200.,2,green,20);(320.,200.,2,green,20);(380.,200.,2,green,10);(440.,200.,2,green,10);(500.,200.,2,green,10);
+                    (20.,250.,3,red,10);(80.,250.,3,red,10);(140.,250.,3,red,10);(200.,250.,3,red,20);(260.,250.,3,green,20);(320.,250.,3,red,20);(380.,250.,3,red,10);(440.,250.,3,red,10);(500.,250.,3,red,10);
+                    ]
     let score = 0
-    let tentatives = 1
+    let tentatives = 3
   end
 
 
 
-module Draw = Drawing (Initialisation)
 
+module Draw = Drawing (Initialisation)
 let _  = Draw.run (BouncingBall.etat (module Initialisation));;
 
 
